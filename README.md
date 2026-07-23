@@ -23,8 +23,11 @@ Work Radar keeps both answers one glance away in your menu bar, so you can chase
    PRs with changes requested are flagged and sorted to the top, then the least-approved and oldest.
    Fully approved and draft PRs are hidden, since they no longer need you.
    The submenu on each PR shows the repo, age, and who approved or requested changes.
-2. **Sprint · In Progress** - your current-sprint stories in the `In Progress` status.
-3. **Sprint · To Do** - your current-sprint stories in the `To Do` status.
+2. **PRs to review** - open pull requests where your review has been requested.
+   The submenu shows the repo, who opened it, and how long it has been waiting; longest-waiting first.
+   Your own PRs never appear here, even when a team you belong to is auto-requested as reviewer.
+3. **Sprint · In Progress** - your current-sprint stories in the `In Progress` status.
+4. **Sprint · To Do** - your current-sprint stories in the `To Do` status.
 
 Every row is clickable and opens the PR or Jira issue in your browser.
 The footer shows the last refresh time, a manual "Refresh now" action, and quick links to GitHub and your Jira board.
@@ -37,7 +40,7 @@ Opening the menu is instant because it shows the last cached result; use "Refres
 
 It reuses your already-authenticated command line tools rather than managing any of its own auth:
 
-- **GitHub** via the `gh` CLI - one GraphQL call returns your open PRs with their approval state.
+- **GitHub** via the `gh` CLI - one GraphQL call returns both your open PRs (with approval state) and the PRs awaiting your review.
 - **Jira** via the `jira` CLI - one call per status against your current sprint.
 
 The Jira server and board are read from your `jira-cli` config, so nothing in this repository is specific to any one person or organization.

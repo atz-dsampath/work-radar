@@ -147,39 +147,68 @@ def human_age(iso):
 
 
 # --- Data: GitHub -----------------------------------------------------------
-def fetch_prs():
-    q = "author:@me is:pr is:open archived:false"
+_PR_FIELDS = (
+    "fragment prparts on PullRequest { number title url isDraft createdAt "
+    "repository{nameWithOwner} author{login} reviewDecision "
+    "latestOpinionatedReviews(first:50){nodes{state author{login}}} }"
+)
+
+
+def fetch_github():
+    """One GraphQL call for both lists: my PRs awaiting approval, and PRs to review."""
+    mine_q = "author:@me is:pr is:open archived:false"
+    review_q = "review-requested:@me -author:@me is:pr is:open archived:false"
     query = (
-        "query($q:String!){ search(query:$q, type:ISSUE, first:50){ nodes{ "
-        "... on PullRequest{ number title url isDraft createdAt "
-        "repository{nameWithOwner} reviewDecision "
-        "latestOpinionatedReviews(first:50){nodes{state author{login}}} } } } }"
+        "query($mine:String!,$review:String!){ "
+        "mine: search(query:$mine, type:ISSUE, first:50){ nodes{ ...prparts } } "
+        "review: search(query:$review, type:ISSUE, first:50){ nodes{ ...prparts } } } "
+        + _PR_FIELDS
     )
-    r = run([GH, "api", "graphql", "-f", "q=" + q, "-f", "query=" + query])
+    r = run([GH, "api", "graphql", "-f", "mine=" + mine_q, "-f", "review=" + review_q, "-f", "query=" + query])
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "gh graphql failed")
+    data = json.loads(r.stdout)["data"]
+    mine_nodes = data["mine"]["nodes"]
+    # Anything GitHub attributes to me as author (incl. Copilot-agent PRs opened on
+    # my behalf) belongs in "awaiting approval", never in "to review".
+    mine_urls = {p["url"] for p in mine_nodes if p}
+    review = [p for p in _parse_review(data["review"]["nodes"]) if p["url"] not in mine_urls]
+    return _parse_mine(mine_nodes), review
 
-    nodes = json.loads(r.stdout)["data"]["search"]["nodes"]
+
+def _parse_mine(nodes):
+    """My open PRs that still need approvals (drafts and fully-approved hidden)."""
     prs = []
     for p in nodes:
         if not p or p.get("isDraft"):
             continue
-        if p.get("reviewDecision") == "APPROVED":  # already has its 2 approvals
+        if p.get("reviewDecision") == "APPROVED":  # already has the approvals it needs
             continue
         revs = (p.get("latestOpinionatedReviews") or {}).get("nodes") or []
         approvers = [x["author"]["login"] for x in revs if x.get("state") == "APPROVED" and x.get("author")]
         changers = [x["author"]["login"] for x in revs if x.get("state") == "CHANGES_REQUESTED" and x.get("author")]
         prs.append({
-            "number": p["number"],
-            "title": p["title"],
-            "url": p["url"],
-            "repo": p["repository"]["nameWithOwner"],
-            "created": p["createdAt"],
-            "approvers": approvers,
-            "changers": changers,
+            "number": p["number"], "title": p["title"], "url": p["url"],
+            "repo": p["repository"]["nameWithOwner"], "created": p["createdAt"],
+            "approvers": approvers, "changers": changers,
         })
     # Most urgent first: changes-requested, then fewest approvals, then oldest.
     prs.sort(key=lambda x: (len(x["changers"]) == 0, len(x["approvers"]), x["created"]))
+    return prs
+
+
+def _parse_review(nodes):
+    """Open PRs where my review is requested (drafts hidden), longest-waiting first."""
+    prs = []
+    for p in nodes:
+        if not p or p.get("isDraft"):
+            continue
+        prs.append({
+            "number": p["number"], "title": p["title"], "url": p["url"],
+            "repo": p["repository"]["nameWithOwner"], "created": p["createdAt"],
+            "author": (p.get("author") or {}).get("login", "unknown"),
+        })
+    prs.sort(key=lambda x: x["created"])
     return prs
 
 
@@ -219,7 +248,7 @@ def main():
     # Kick off all network calls at once so a refresh takes about as long as the
     # single slowest call rather than the sum of them.
     pool = ThreadPoolExecutor(max_workers=4)
-    f_prs = pool.submit(fetch_prs)
+    f_github = pool.submit(fetch_github)
     sprint_futures = {}
     jira_error = None
     try:
@@ -229,15 +258,16 @@ def main():
     except Exception as e:
         jira_error = e
 
-    # PRs awaiting my approval
+    # PRs: mine awaiting approval, then PRs to review (one GitHub call for both).
     try:
-        prs = f_prs.result()
-        pr_count = len(prs)
+        mine, to_review = f_github.result()
+        pr_count = len(mine) + len(to_review)
+
         body.append("---")
-        body.append("PRs awaiting approval (%d) | size=13 color=%s" % (len(prs), MUTED))
-        if not prs:
+        body.append("PRs awaiting approval (%d) | size=13 color=%s" % (len(mine), MUTED))
+        if not mine:
             body.append("All caught up | color=%s sfimage=checkmark.seal.fill" % GREEN)
-        for p in prs:
+        for p in mine:
             n_appr = len(p["approvers"])
             changes = len(p["changers"]) > 0
             if changes:
@@ -257,10 +287,20 @@ def main():
                 body.append("-- Approved by %s | color=%s" % (esc(", ".join(p["approvers"])), GREEN))
             if p["changers"]:
                 body.append("-- Changes requested by %s | color=%s" % (esc(", ".join(p["changers"])), ORANGE))
+
+        body.append("---")
+        body.append("PRs to review (%d) | size=13 color=%s" % (len(to_review), MUTED))
+        if not to_review:
+            body.append("Nothing to review | color=%s sfimage=checkmark.seal.fill" % GREEN)
+        for p in to_review:
+            text = "#%d  %s" % (p["number"], truncate(esc(p["title"]), 50))
+            body.append("%s | href=%s sfimage=eye size=14" % (text, p["url"]))
+            body.append("-- %s \u00b7 by %s \u00b7 opened %s | href=%s" % (
+                p["repo"], esc(p["author"]), human_age(p["created"]), p["url"]))
     except Exception as e:
         had_error = True
         body.append("---")
-        body.append("PRs: couldn't load | color=%s sfimage=exclamationmark.triangle.fill" % RED)
+        body.append("GitHub: couldn't load | color=%s sfimage=exclamationmark.triangle.fill" % RED)
         body.append("-- %s" % truncate(esc(str(e)), 300))
 
     # Current sprint: In Progress, then To Do
