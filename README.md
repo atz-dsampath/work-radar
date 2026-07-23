@@ -32,30 +32,45 @@ It reuses your already-authenticated command line tools rather than managing any
 The Jira server and board are read from your `jira-cli` config, so nothing in this repository is specific to any one person or organization.
 Because it shells out to these CLIs, there are no API tokens stored in this repository.
 
-## Setup (new machine or teammate)
+## Setup
 
-You need [Homebrew](https://brew.sh) and macOS.
-From a clone of this repo, run:
+**Prerequisites:** macOS with [Homebrew](https://brew.sh).
+
+### 1. Clone the repo
+
+```sh
+git clone https://github.com/atz-dsampath/work-radar.git ~/Documents/repos/work-radar
+cd ~/Documents/repos/work-radar
+```
+
+### 2. Authenticate the two CLIs
+
+Everything is per-user and driven by these two logins, so you see *your own* PRs and sprint.
+
+```sh
+gh auth login     # GitHub
+jira init         # Jira (needs an API token - see below)
+```
+
+Create a Jira API token at <https://id.atlassian.com/manage-profile/security/api-tokens>.
+Don't have `gh` or `jira` installed yet? Skip to step 3 - `setup.sh` installs them, then tells you to come back and run these.
+
+### 3. Run the setup script
 
 ```sh
 ./setup.sh
 ```
 
-The script is idempotent and handles everything:
+It is idempotent and does the rest:
 
-- installs `gh`, `jira-cli`, and SwiftBar if missing,
-- authenticates the GitHub CLI if needed,
-- verifies `jira-cli` is configured,
-- stores your Jira API token in the login Keychain,
-- links the plugin into `~/.swiftbar`, points SwiftBar at it, and enables launch at login.
+- installs anything missing (`gh`, `jira-cli`, SwiftBar),
+- stores your Jira API token in the login Keychain so it works under SwiftBar,
+- links the plugin into `~/.swiftbar` and points SwiftBar at it,
+- enables launch at login, and starts SwiftBar.
 
-### Authenticate the two CLIs first
+### 4. Done
 
-Everything is per-user, driven by these two logins:
-
-- **GitHub:** `gh auth login`
-- **Jira:** `jira init` - you'll need a Jira API token from
-  <https://id.atlassian.com/manage-profile/security/api-tokens>.
+Look for the **sunglasses icon** in your menu bar and click it.
 
 ## Jira token
 
