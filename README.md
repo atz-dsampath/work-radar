@@ -5,6 +5,17 @@ A personal macOS menu bar dashboard, built as a [SwiftBar](https://github.com/sw
 It sits in the menu bar as a sunglasses icon.
 Click it to open a dropdown with everything that needs your attention right now.
 
+## The problem it solves
+
+As a developer you lose time context-switching to answer two recurring questions:
+
+- *Which of my pull requests are still blocked on reviews?*
+  Normally you open GitHub, filter to your PRs, and open each one to check how many approvals it has.
+- *What should I be working on this sprint?*
+  Normally you open Jira and scan the board for your To Do and In Progress stories.
+
+Work Radar keeps both answers one glance away in your menu bar, so you can chase reviewers and stay on top of your sprint without breaking flow or opening a tab.
+
 ## What it shows
 
 1. **PRs awaiting approval** - your own open pull requests that still need review.
@@ -115,3 +126,12 @@ To force a refresh from the command line:
 ```sh
 open "swiftbar://refreshallplugins"
 ```
+
+## Author
+
+Made by Dheeraj Sampath.
+
+## License
+
+Released under the [MIT License](LICENSE).
+MIT (c) 2026 Dheeraj Sampath.
