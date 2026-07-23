@@ -42,6 +42,20 @@ RED = "#ff453a"
 ORANGE = "#ff9f0a"
 GREEN = "#32d74b"
 
+# Jira issue type -> SF Symbol. Unknown types fall back to a plain dot.
+JIRA_TYPE_ICONS = {
+    "story": "bookmark.fill",
+    "bug": "ladybug.fill",
+    "story bug": "ladybug.fill",
+    "task": "checkmark.square.fill",
+    "sub-task": "checkmark.square",
+    "epic": "bolt.fill",
+    "debt": "arrow.triangle.2.circlepath",
+    "test": "testtube.2",
+    "issue / question": "questionmark.circle.fill",
+}
+JIRA_TYPE_ICON_DEFAULT = "circle"
+
 # SwiftBar runs plugins with a slim PATH; make sure Homebrew + system dirs are on it.
 ENV = {**os.environ}
 ENV["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + ENV.get("PATH", "")
@@ -146,6 +160,10 @@ def human_age(iso):
         return "recently"
 
 
+def jira_icon(itype):
+    return JIRA_TYPE_ICONS.get((itype or "").strip().lower(), JIRA_TYPE_ICON_DEFAULT)
+
+
 # --- Data: GitHub -----------------------------------------------------------
 _PR_FIELDS = (
     "fragment prparts on PullRequest { number title url isDraft createdAt "
@@ -223,18 +241,20 @@ def jira_me():
 def fetch_sprint(me, status):
     r = run([
         JIRA, "sprint", "list", "--current", "-a", me, "-s", status,
-        "--plain", "--no-headers", "--columns", "KEY,SUMMARY",
+        "--plain", "--no-headers", "--columns", "KEY,TYPE,SUMMARY",
     ], env=JIRA_ENV)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip() or "jira sprint list failed")
     items = []
     for line in r.stdout.splitlines():
-        line = line.strip()
-        if not line:
+        if not line.strip():
             continue
-        parts = line.split(None, 1)  # KEY has no spaces; rest is the summary
-        if len(parts) == 2:
-            items.append({"key": parts[0], "summary": parts[1]})
+        # Columns are tab-delimited; jira pads with extra tabs, so split on tab runs.
+        parts = re.split(r"\t+", line.rstrip())
+        if len(parts) >= 3:
+            items.append({"key": parts[0].strip(), "type": parts[1].strip(), "summary": parts[2].strip()})
+        elif len(parts) == 2:
+            items.append({"key": parts[0].strip(), "type": "", "summary": parts[1].strip()})
     return items
 
 
@@ -310,9 +330,9 @@ def main():
         body.append("Jira: couldn't load | color=%s sfimage=exclamationmark.triangle.fill" % RED)
         body.append("-- %s" % truncate(esc(str(jira_error)), 300))
     else:
-        for label, status, icon in [
-            ("Sprint \u00b7 In Progress", "In Progress", "circle.fill"),
-            ("Sprint \u00b7 To Do", "To Do", "circle"),
+        for label, status in [
+            ("Sprint \u00b7 In Progress", "In Progress"),
+            ("Sprint \u00b7 To Do", "To Do"),
         ]:
             try:
                 items = sprint_futures[status].result()
@@ -324,7 +344,7 @@ def main():
                 for it in items:
                     url = "%s/browse/%s" % (JIRA_SERVER, it["key"])
                     body.append("%s  %s | href=%s sfimage=%s size=14" % (
-                        it["key"], truncate(esc(it["summary"]), 50), url, icon))
+                        it["key"], truncate(esc(it["summary"]), 50), url, jira_icon(it["type"])))
             except Exception as e:
                 had_error = True
                 body.append("---")
