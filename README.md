@@ -5,10 +5,6 @@ A personal macOS menu bar dashboard, built as a [SwiftBar](https://github.com/sw
 It sits in the menu bar as a sunglasses icon.
 Click it to open a dropdown with everything that needs your attention right now.
 
-<p align="center">
-  <img src="docs/preview.png" alt="Work Radar dropdown showing PRs awaiting approval, PRs to review, and current-sprint stories" width="440">
-</p>
-
 ## The problem it solves
 
 As a developer you lose time context-switching to answer two recurring questions:
