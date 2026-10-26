@@ -18,12 +18,13 @@ Work Radar keeps both answers one glance away in your menu bar, so you can chase
 
 ## What it shows
 
-1. **PRs awaiting approval** - your own open pull requests that still need review.
+1. **My open PRs** - every one of your open pull requests until it merges.
    Each row shows how many of the required approvals it has so far (`0/2`, `1/2`).
    PRs with changes requested are flagged and sorted to the top, then the least-approved and oldest.
-   Fully approved and draft PRs are hidden, since they no longer need you.
+   Fully approved PRs stay listed with a green check, sorted last; drafts show a grey pencil and a `draft` badge.
    The submenu on each PR shows the repo, age, and who approved or requested changes.
 2. **PRs to review** - open pull requests where your review has been requested.
+   PRs with no activity for 15 days are hidden (`STALE_REVIEW_DAYS` in the script).
    The submenu shows the repo, who opened it, and how long it has been waiting; longest-waiting first.
    Your own PRs never appear here, even when a team you belong to is auto-requested as reviewer.
 3. **Sprint · In Progress** - your current-sprint stories in the `In Progress` status.

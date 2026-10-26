@@ -9,10 +9,11 @@
 Work Radar - a SwiftBar menu bar dashboard.
 
 Sections:
-  1. PRs I opened that still need approval (2 approvals required), with how many
-     approvals each has so far. Fully approved and draft PRs are hidden.
-  2. My current-sprint stories that are In Progress.
-  3. My current-sprint stories that are To Do.
+  1. My open PRs, drafts included, with approvals so far out of 2 required.
+     Approved PRs stay listed until merged.
+  2. PRs awaiting my review, minus any with no activity for 15 days.
+  3. My current-sprint stories that are In Progress.
+  4. My current-sprint stories that are To Do.
 
 Reuses the already-authenticated `gh` and `jira` CLIs, so there are no tokens in
 this file. Runs on a 5-minute interval (see the .5m. in the filename).
@@ -27,12 +28,14 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 # --- Config -----------------------------------------------------------------
-# Approvals a PR needs before it drops off the list (override via env var).
+# Approvals a PR needs to count as approved (override via env var).
 REQUIRED_APPROVALS = int(os.environ.get("WORK_RADAR_REQUIRED_APPROVALS", "2"))
 # Keychain service that stores the Jira API token (see setup.sh / README).
 JIRA_TOKEN_SERVICE = "work-radar-jira"
 GITHUB_PR_URL = "https://github.com/pulls?q=is%3Aopen+is%3Apr+author%3A%40me+archived%3Afalse"
 CLI_TIMEOUT = 30  # seconds per CLI call
+# Review requests with no activity for this many days are hidden.
+STALE_REVIEW_DAYS = 15
 # JIRA_SERVER / JIRA_BOARD_URL are read from your jira-cli config below, so there
 # is nothing org-specific hardcoded in this file.
 
@@ -166,7 +169,7 @@ def jira_icon(itype):
 
 # --- Data: GitHub -----------------------------------------------------------
 _PR_FIELDS = (
-    "fragment prparts on PullRequest { number title url isDraft createdAt "
+    "fragment prparts on PullRequest { number title url isDraft createdAt updatedAt "
     "repository{nameWithOwner} author{login} reviewDecision "
     "latestOpinionatedReviews(first:50){nodes{state author{login}}} }"
 )
@@ -195,12 +198,10 @@ def fetch_github():
 
 
 def _parse_mine(nodes):
-    """My open PRs that still need approvals (drafts and fully-approved hidden)."""
+    """My open PRs, drafts included; approved ones sort last."""
     prs = []
     for p in nodes:
-        if not p or p.get("isDraft"):
-            continue
-        if p.get("reviewDecision") == "APPROVED":  # already has the approvals it needs
+        if not p:
             continue
         revs = (p.get("latestOpinionatedReviews") or {}).get("nodes") or []
         approvers = [x["author"]["login"] for x in revs if x.get("state") == "APPROVED" and x.get("author")]
@@ -209,17 +210,22 @@ def _parse_mine(nodes):
             "number": p["number"], "title": p["title"], "url": p["url"],
             "repo": p["repository"]["nameWithOwner"], "created": p["createdAt"],
             "approvers": approvers, "changers": changers,
+            "approved": p.get("reviewDecision") == "APPROVED", "draft": bool(p.get("isDraft")),
         })
-    # Most urgent first: changes-requested, then fewest approvals, then oldest.
-    prs.sort(key=lambda x: (len(x["changers"]) == 0, len(x["approvers"]), x["created"]))
+    # Most urgent first: changes-requested, then fewest approvals, then oldest; approved last.
+    prs.sort(key=lambda x: (x["approved"], len(x["changers"]) == 0, len(x["approvers"]), x["created"]))
     return prs
 
 
 def _parse_review(nodes):
-    """Open PRs where my review is requested (drafts hidden), longest-waiting first."""
+    """Open PRs where my review is requested (drafts and stale hidden), longest-waiting first."""
+    cutoff = datetime.now(timezone.utc).timestamp() - STALE_REVIEW_DAYS * 86400
     prs = []
     for p in nodes:
         if not p or p.get("isDraft"):
+            continue
+        updated = datetime.fromisoformat(p["updatedAt"].replace("Z", "+00:00")).timestamp()
+        if updated < cutoff:
             continue
         prs.append({
             "number": p["number"], "title": p["title"], "url": p["url"],
@@ -278,25 +284,31 @@ def main():
     except Exception as e:
         jira_error = e
 
-    # PRs: mine awaiting approval, then PRs to review (one GitHub call for both).
+    # PRs: my open PRs, then PRs to review (one GitHub call for both).
     try:
         mine, to_review = f_github.result()
         pr_count = len(mine) + len(to_review)
 
         body.append("---")
-        body.append("PRs awaiting approval (%d) | size=13 color=%s" % (len(mine), MUTED))
+        body.append("My open PRs (%d) | size=13 color=%s" % (len(mine), MUTED))
         if not mine:
             body.append("All caught up | color=%s sfimage=checkmark.seal.fill" % GREEN)
         for p in mine:
             n_appr = len(p["approvers"])
             changes = len(p["changers"]) > 0
-            if changes:
+            if p["draft"]:
+                icon, color = "pencil.circle", MUTED
+            elif p["approved"]:
+                icon, color = "checkmark.circle.fill", GREEN
+            elif changes:
                 icon, color = "exclamationmark.triangle.fill", ORANGE
             elif n_appr >= 1:
                 icon, color = "circle.lefthalf.filled", ""
             else:
                 icon, color = "circle", ""
             badge = "changes \u00b7 %d/%d" % (n_appr, REQUIRED_APPROVALS) if changes else "%d/%d" % (n_appr, REQUIRED_APPROVALS)
+            if p["draft"]:
+                badge = "draft"
             text = "#%d  %s   %s" % (p["number"], truncate(esc(p["title"]), 48), badge)
             params = "href=%s sfimage=%s size=14" % (p["url"], icon)
             if color:
