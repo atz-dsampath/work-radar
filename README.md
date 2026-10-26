@@ -104,7 +104,7 @@ The plugin prefers `JIRA_API_TOKEN` from the environment if present, and falls b
 
 - **Refresh interval** - rename the file, changing `5m` to any interval such as `1m`, `10m`, or `1h`.
 - **Required approvals** - set the `WORK_RADAR_REQUIRED_APPROVALS` env var, or change the default in the script.
-- **Which PRs** - the search query is `author:@me is:pr is:open` in `fetch_prs`; adjust it to change scope.
+- **Which PRs** - the search queries are in `fetch_github`; adjust them to change scope.
 - **Server / board** - detected automatically from your `jira-cli` config; no code change needed.
 
 ## Troubleshooting
